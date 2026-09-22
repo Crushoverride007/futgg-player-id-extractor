@@ -341,9 +341,15 @@
 
   function findGalleryCardFromTarget(target) {
     if (!isGalleryCardsView()) return null;
-    const cards = visibleGalleryCards();
     const element = target instanceof Element ? target : null;
-    return cards.find((card) => card === element || card.contains(element)) || null;
+    if (!element) return null;
+    return visibleGalleryCards()
+      .filter((card) => card === element || card.contains(element))
+      .sort((a, b) => {
+        const aRect = a.getBoundingClientRect();
+        const bRect = b.getBoundingClientRect();
+        return (aRect.width * aRect.height) - (bRect.width * bRect.height);
+      })[0] || null;
   }
 
   function handleGalleryCardClick(event) {
@@ -361,9 +367,8 @@
     const teamName = findGalleryTeamName(card);
     if (!teamName) return;
 
-    event.preventDefault();
-    event.stopPropagation();
-    event.stopImmediatePropagation();
+    // Do not cancel or stop the site's event. FC Enhancer owns the Gallery
+    // and league navigation; this extension only observes the team-card click.
     card.classList.add("futgg-extractor-loading");
     showGalleryNotice(`Loading ${teamName} player IDs…`);
     chrome.runtime.sendMessage({
