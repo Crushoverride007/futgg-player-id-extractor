@@ -100,7 +100,7 @@ Price: 950  ->  Sell price: 950
 Price: 450  ->  Sell price: 450
 ```
 
-Empty and zero-price rows are skipped. The extension does not submit listings automatically.
+The extension scans the table viewport-by-viewport, including rows loaded by a virtualized scroll list, and restores the original scroll position afterward. Empty and zero-price rows are skipped. The extension does not submit listings automatically.
 
 ## Button order
 

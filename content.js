@@ -99,8 +99,7 @@
     })[0];
   }
 
-  function fieldRows() {
-    const table = findPriceTable();
+  function fieldRows(table = findPriceTable()) {
     if (!table) return [];
 
     const fields = [...table.querySelectorAll("input, textarea")]
@@ -125,21 +124,93 @@
       .map((fields) => fields.slice(0, 2));
   }
 
-  function syncSellPrices() {
-    const rows = fieldRows();
-    let updated = 0;
+  function waitForTablePaint() {
+    return new Promise((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(resolve, 80)));
+    });
+  }
 
-    for (const fields of rows) {
-      // In FUT Enhancer's table, the left input is Price and the right input is Sell price.
-      const buyField = fields[0];
-      const sellField = fields[1];
-      const value = String(buyField.value || "").trim();
-      if (!/^\d+$/.test(value) || Number(value) <= 0) continue;
-      setReactValue(sellField, value);
-      updated += 1;
+  function scrollContainers(table) {
+    const ancestors = [];
+    for (let element = table; element; element = element.parentElement) ancestors.push(element);
+    const elements = [...new Set([...ancestors, ...table.querySelectorAll("*")])];
+    const containers = elements.filter((element) => {
+      const style = getComputedStyle(element);
+      const canScroll = ["auto", "scroll", "overlay"].includes(style.overflowY);
+      return canScroll && element.scrollHeight > element.clientHeight + 2;
+    });
+
+    // Prefer the smallest scrollable element that contains the price inputs.
+    return containers.sort((a, b) => (a.scrollHeight - a.clientHeight) - (b.scrollHeight - b.clientHeight));
+  }
+
+  function rowSignature(fields) {
+    const buyField = fields[0];
+    const row = buyField.closest("tr, [role='row'], li") || buyField.parentElement?.parentElement;
+    const image = row?.querySelector("img");
+    const imageKey = image?.currentSrc || image?.src || image?.alt || "";
+    const label = row?.textContent?.replace(/\s+/g, " ").trim().slice(0, 120) || "";
+    return `${imageKey}|${label}|${String(buyField.value || "").trim()}`;
+  }
+
+  async function syncSellPrices() {
+    const table = findPriceTable();
+    if (!table) {
+      return { ok: false, reason: "No FUT Enhancer price rows were found. Open the gallery price table first." };
     }
 
-    if (!rows.length) {
+    const containers = scrollContainers(table);
+    const originalPositions = containers.map((container) => ({ container, top: container.scrollTop }));
+    const processed = new Set();
+    let updated = 0;
+    let visibleRows = 0;
+
+    const processVisibleRows = () => {
+      for (const fields of fieldRows(table)) {
+        visibleRows += 1;
+        const buyField = fields[0];
+        const sellField = fields[1];
+        const value = String(buyField.value || "").trim();
+        if (!/^\d+$/.test(value) || Number(value) <= 0) continue;
+
+        const signature = rowSignature(fields);
+        if (processed.has(signature)) continue;
+        processed.add(signature);
+        setReactValue(sellField, value);
+        updated += 1;
+      }
+    };
+
+    // Scan the initial viewport, then every viewport below it. This also handles
+    // virtualized tables where only the currently visible rows exist in the DOM.
+    for (const container of containers.slice(0, 1)) {
+      container.scrollTop = 0;
+      container.dispatchEvent(new Event("scroll", { bubbles: true }));
+      await waitForTablePaint();
+
+      let previousTop = -1;
+      while (container.scrollTop !== previousTop) {
+        previousTop = container.scrollTop;
+        processVisibleRows();
+        if (container.scrollTop + container.clientHeight >= container.scrollHeight - 2) break;
+        container.scrollTop = Math.min(
+          container.scrollTop + Math.max(80, Math.floor(container.clientHeight * 0.8)),
+          container.scrollHeight - container.clientHeight
+        );
+        container.dispatchEvent(new Event("scroll", { bubbles: true }));
+        await waitForTablePaint();
+      }
+    }
+
+    // If the table has no scrollable child, process its currently rendered rows.
+    if (!containers.length) processVisibleRows();
+
+    for (const { container, top } of originalPositions) {
+      container.scrollTop = top;
+      container.dispatchEvent(new Event("scroll", { bubbles: true }));
+    }
+
+    if (!visibleRows) {
       return { ok: false, reason: "No FUT Enhancer price rows were found. Open the gallery price table first." };
     }
     return { ok: true, updated };
@@ -151,7 +222,8 @@
       return;
     }
     if (message?.type === "syncSellPrices") {
-      sendResponse(syncSellPrices());
+      syncSellPrices().then(sendResponse);
+      return true;
     }
   });
 })();
