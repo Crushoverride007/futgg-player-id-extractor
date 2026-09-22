@@ -249,17 +249,31 @@
   function findGalleryTeamName(card) {
     const explicit = galleryTeamHint(card) || card.getAttribute("aria-label");
     if (explicit) return explicit.replace(/\s+FUT Gallery Set.*$/i, "").trim();
-    const heading = card.querySelector("h1, h2, h3, h4, [class*='team-name'], [class*='club-name'], [class*='title']");
+
+    const heading = card.querySelector("h1, h2, h3, h4, [class*='team-name'], [class*='club-name']");
     if (heading?.textContent?.trim()) return heading.textContent.replace(/\s+FUT Gallery Set.*$/i, "").trim();
 
-    const ignored = /^(gallery|buy players|sync collection|collected|base score|grade|tokens|items|coins needed|total price|score|available|players?|needed|d|c|b|a|s)$/i;
+    // The card name is a direct text node beside the crest. The metric labels
+    // are descendants of a separate group, so inspect only direct text nodes
+    // before using the leaf fallback.
+    const directText = [...card.childNodes]
+      .filter((node) => node.nodeType === Node.TEXT_NODE)
+      .map((node) => node.textContent.replace(/\s+/g, " ").trim())
+      .find((text) => text && text.length <= 60 && !/^\d[\d,./%\s-]*$/.test(text));
+    if (directText) return directText;
+
+    const ignored = /^(gallery|buy players|sync collection|collected|base score|grade|tokens?|items|coins needed|total price|score|available|players?|needed|d|c|b|a|s)$/i;
+    const metricText = /(collected|base score|tokens?|coins needed|total price)/i;
     const candidates = [...card.querySelectorAll("span, p, strong, b, div")]
+      .filter((element) => element.children.length === 0)
       .map((element) => element.textContent.replace(/\s+/g, " ").trim())
-      .filter((text, index, values) => text && text.length <= 60 && !ignored.test(text)
-        && !/^\d[\d,./\s-]*$/.test(text)
+      .filter((text, index, values) => text && text.length <= 60 && text.split(" ").length <= 5
+        && !ignored.test(text) && !metricText.test(text)
+        && !/^\d[\d,./%\s-]*$/.test(text)
         && !values.some((other, otherIndex) => otherIndex !== index && other.length < text.length && other && text === other));
+
     return candidates.sort((a, b) => {
-      const score = (value) => (value.split(" ").length > 1 ? 0 : 1) * 100 + value.length;
+      const score = (value) => value.split(" ").length * 10 + value.length;
       return score(a) - score(b);
     })[0] || "";
   }
@@ -270,50 +284,85 @@
     if (text.length > 700) return false;
     // Current FUT Enhancer cards expose the token icon as an image, so the
     // accessible/text content contains the count but not the word "tokens".
-    // Collected + Base score is the stable card signature.
-    return text.includes("collected") && text.includes("base score");
+    // Require a real team-name leaf as well as the stable metric labels. This
+    // excludes the nested metrics group that previously captured the click.
+    return text.includes("collected") && text.includes("base score") && Boolean(findGalleryTeamName(element));
+  }
+
+  function showGalleryNotice(message, error = false) {
+    let notice = document.getElementById("futgg-extractor-gallery-notice");
+    if (!notice) {
+      notice = document.createElement("div");
+      notice.id = "futgg-extractor-gallery-notice";
+      Object.assign(notice.style, {
+        position: "fixed", top: "20px", left: "50%", transform: "translateX(-50%)",
+        zIndex: "2147483647", maxWidth: "min(560px, calc(100vw - 40px))", padding: "12px 16px",
+        borderRadius: "8px", font: "600 14px/1.35 system-ui, sans-serif", color: "#fff",
+        boxShadow: "0 8px 28px rgba(0,0,0,.35)", pointerEvents: "none"
+      });
+      document.documentElement.appendChild(notice);
+    }
+    notice.textContent = message;
+    notice.style.background = error ? "#a32929" : "#176b45";
+    notice.style.display = "block";
+    clearTimeout(notice._timer);
+    notice._timer = setTimeout(() => { notice.style.display = "none"; }, error ? 7000 : 3500);
+  }
+
+  function findGalleryCardFromTarget(target) {
+    for (let element = target instanceof Element ? target : null; element && element !== document.body; element = element.parentElement) {
+      if (isGalleryCard(element)) return element;
+    }
+    return null;
+  }
+
+  function handleGalleryCardClick(event) {
+    const card = findGalleryCardFromTarget(event.target);
+    if (!card) return;
+
+    const control = event.target.closest("input, select, textarea, [contenteditable='true']");
+    if (control) return;
+
+    const teamName = findGalleryTeamName(card);
+    if (!teamName) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+    card.classList.add("futgg-extractor-loading");
+    showGalleryNotice(`Loading ${teamName} player IDs…`);
+    chrome.runtime.sendMessage({
+      type: "galleryTeamClicked",
+      teamName,
+      teamSlug: galleryTeamHint(card)
+    }, (response) => {
+      card.classList.remove("futgg-extractor-loading");
+      if (chrome.runtime.lastError || !response?.ok) {
+        const reason = chrome.runtime.lastError?.message || response?.reason || "Could not extract this team.";
+        console.warn("FUT.GG Player ID Extractor:", reason);
+        showGalleryNotice(reason, true);
+      } else {
+        showGalleryNotice(`${teamName}: ${response.count} IDs inserted into Buy players.`);
+      }
+    });
   }
 
   function installGalleryCardHandlers() {
+    if (!document.documentElement.dataset.futggExtractorDelegated) {
+      document.documentElement.dataset.futggExtractorDelegated = "true";
+      document.addEventListener("click", handleGalleryCardClick, true);
+    }
+
+    // Add a pointer cue to currently rendered cards. The delegated handler is
+    // intentionally document-level because React can replace card nodes.
     const cards = [...document.querySelectorAll("a, button, [role='button'], article, section, li, div")]
       .filter((element) => isGalleryCard(element));
     const cardSet = new Set(cards);
-    const compact = cards.filter((card) => {
-      for (let parent = card.parentElement; parent; parent = parent.parentElement) {
-        if (cardSet.has(parent)) return false;
+    for (const card of cards) {
+      if ([...card.parentElement ? card.parentElement.children : []].some((sibling) => sibling !== card && cardSet.has(sibling))) {
+        card.style.cursor = "pointer";
+        card.title = `${findGalleryTeamName(card)} — extract players with FUT.GG Player ID Extractor`;
       }
-      return true;
-    });
-
-    for (const card of compact) {
-      if (card.dataset.futggExtractorBound === "true") continue;
-      const teamName = findGalleryTeamName(card);
-      if (!teamName) continue;
-      card.dataset.futggExtractorBound = "true";
-      card.style.cursor = "pointer";
-      card.title = `${teamName} — extract players with FUT.GG Player ID Extractor`;
-            card.addEventListener("click", (event) => {
-
-        // The card itself may be a button or link. Only let real form controls
-        // inside it keep their native behavior; do not reject clicks on nested
-        // spans or on the card's own anchor/button element.
-        const control = event.target.closest("input, select, textarea, [contenteditable='true']");
-        if (control && control !== card) return;
-        event.preventDefault();
-        event.stopPropagation();
-        event.stopImmediatePropagation();
-        card.classList.add("futgg-extractor-loading");
-        chrome.runtime.sendMessage({
-          type: "galleryTeamClicked",
-          teamName,
-          teamSlug: galleryTeamHint(card)
-        }, (response) => {
-          card.classList.remove("futgg-extractor-loading");
-          if (chrome.runtime.lastError || !response?.ok) {
-            console.warn("FUT.GG Player ID Extractor:", chrome.runtime.lastError?.message || response?.reason || "Could not extract this team.");
-          }
-        });
-      }, true);
     }
   }
 
