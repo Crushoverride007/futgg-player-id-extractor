@@ -101,7 +101,7 @@ Price: 950  ->  Sell price: 950
 Price: 450  ->  Sell price: 450
 ```
 
-The extension scans the table viewport-by-viewport, including rows loaded by a virtualized scroll list, and restores the original scroll position afterward. Empty and zero-price rows are skipped. The extension does not submit listings automatically.
+The extension scans the table viewport-by-viewport, including rows loaded by a virtualized scroll list, and traverses every available table page before restoring the original page and scroll position. Each write is retried and verified against the controlled input. Empty and zero-price rows are skipped. The extension does not submit listings automatically.
 
 ## Button order
 

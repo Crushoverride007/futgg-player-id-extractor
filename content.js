@@ -102,6 +102,19 @@
   function fieldRows(table = findPriceTable()) {
     if (!table) return [];
 
+    // FUT Enhancer renders each item as a semantic row with Price and Sell price
+    // inputs. Use that relationship first; geometry alone can pair fields from
+    // different CSS grid columns when one input is blank or re-rendered.
+    const semanticRows = [...table.querySelectorAll("tr, [role='row']")]
+      .map((row) => [...row.querySelectorAll("input, textarea")].filter(priceInput))
+      .filter((fields) => fields.length >= 2)
+      .map((fields) => {
+        fields.sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left);
+        return [fields[0], fields[fields.length - 1]];
+      });
+    if (semanticRows.length) return semanticRows;
+
+    // Fallback for versions using a CSS grid without row semantics.
     const fields = [...table.querySelectorAll("input, textarea")]
       .filter(priceInput)
       .map((field) => ({ field, rect: field.getBoundingClientRect() }))
@@ -121,12 +134,12 @@
     return rows
       .map((row) => row.fields.sort((a, b) => a.rect.left - b.rect.left).map((entry) => entry.field))
       .filter((fields) => fields.length >= 2)
-      .map((fields) => fields.slice(0, 2));
+      .map((fields) => [fields[0], fields[fields.length - 1]]);
   }
 
-  function waitForTablePaint() {
+  function waitForTablePaint(delay = 120) {
     return new Promise((resolve) => {
-      requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(resolve, 80)));
+      requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(resolve, delay)));
     });
   }
 
@@ -140,7 +153,6 @@
       return canScroll && element.scrollHeight > element.clientHeight + 2;
     });
 
-    // Prefer the smallest scrollable element that contains the price inputs.
     return containers.sort((a, b) => (a.scrollHeight - a.clientHeight) - (b.scrollHeight - b.clientHeight));
   }
 
@@ -149,40 +161,69 @@
     const row = buyField.closest("tr, [role='row'], li") || buyField.parentElement?.parentElement;
     const image = row?.querySelector("img");
     const imageKey = image?.currentSrc || image?.src || image?.alt || "";
-    const label = row?.textContent?.replace(/\s+/g, " ").trim().slice(0, 120) || "";
+    const label = row?.textContent?.replace(/\s+/g, " ").trim().slice(0, 160) || "";
     return `${imageKey}|${label}|${String(buyField.value || "").trim()}`;
   }
 
-  async function syncSellPrices() {
+  function pageButton(direction) {
+    const wanted = direction === "next" ? "next page" : "previous page";
+    return [...document.querySelectorAll("button, [role='button']")]
+      .filter(visible)
+      .find((button) => normalize([
+        button.getAttribute("aria-label"),
+        button.getAttribute("title"),
+        button.textContent
+      ].join(" ")).includes(wanted));
+  }
+
+  function buttonDisabled(button) {
+    return !button || button.disabled || button.getAttribute("aria-disabled") === "true";
+  }
+
+  async function changePage(direction) {
+    const button = pageButton(direction);
+    if (buttonDisabled(button)) return false;
+    button.click();
+    await waitForTablePaint(260);
+    return true;
+  }
+
+  async function syncCurrentPage() {
     const table = findPriceTable();
-    if (!table) {
-      return { ok: false, reason: "No FUT Enhancer price rows were found. Open the gallery price table first." };
-    }
+    if (!table) return { ok: false, updated: 0, rows: 0 };
 
     const containers = scrollContainers(table);
     const originalPositions = containers.map((container) => ({ container, top: container.scrollTop }));
     const processed = new Set();
     let updated = 0;
-    let visibleRows = 0;
+    let rows = 0;
+    let failed = 0;
 
-    const processVisibleRows = () => {
+    const processVisibleRows = async () => {
       for (const fields of fieldRows(table)) {
-        visibleRows += 1;
+        rows += 1;
         const buyField = fields[0];
         const sellField = fields[1];
-        const value = String(buyField.value || "").trim();
+        const value = String(buyField.value || "").replace(/,/g, "").trim();
         if (!/^\d+$/.test(value) || Number(value) <= 0) continue;
 
         const signature = rowSignature(fields);
         if (processed.has(signature)) continue;
         processed.add(signature);
-        setReactValue(sellField, value);
-        updated += 1;
+
+        let applied = false;
+        for (let attempt = 0; attempt < 3 && !applied; attempt += 1) {
+          setReactValue(sellField, value);
+          await new Promise((resolve) => setTimeout(resolve, 35));
+          applied = String(sellField.value || "").replace(/,/g, "").trim() === value;
+        }
+        if (applied) updated += 1;
+        else failed += 1;
       }
     };
 
-    // Scan the initial viewport, then every viewport below it. This also handles
-    // virtualized tables where only the currently visible rows exist in the DOM.
+    // Process every rendered row, then walk the internal virtualized scroll list.
+    await processVisibleRows();
     for (const container of containers.slice(0, 1)) {
       container.scrollTop = 0;
       container.dispatchEvent(new Event("scroll", { bubbles: true }));
@@ -191,7 +232,7 @@
       let previousTop = -1;
       while (container.scrollTop !== previousTop) {
         previousTop = container.scrollTop;
-        processVisibleRows();
+        await processVisibleRows();
         if (container.scrollTop + container.clientHeight >= container.scrollHeight - 2) break;
         container.scrollTop = Math.min(
           container.scrollTop + Math.max(80, Math.floor(container.clientHeight * 0.8)),
@@ -202,18 +243,58 @@
       }
     }
 
-    // If the table has no scrollable child, process its currently rendered rows.
-    if (!containers.length) processVisibleRows();
-
     for (const { container, top } of originalPositions) {
       container.scrollTop = top;
       container.dispatchEvent(new Event("scroll", { bubbles: true }));
     }
 
-    if (!visibleRows) {
+    return { ok: rows > 0, updated, rows, failed };
+  }
+
+  async function syncSellPrices() {
+    if (!findPriceTable()) {
       return { ok: false, reason: "No FUT Enhancer price rows were found. Open the gallery price table first." };
     }
-    return { ok: true, updated };
+
+    let pages = 0;
+    let updated = 0;
+    let rows = 0;
+    let failed = 0;
+
+    const scan = async () => {
+      const result = await syncCurrentPage();
+      if (!result.ok && !result.rows) return false;
+      pages += 1;
+      updated += result.updated;
+      rows += result.rows;
+      failed += result.failed;
+      return true;
+    };
+
+    await scan();
+
+    let forward = 0;
+    while (await changePage("next")) {
+      forward += 1;
+      await scan();
+    }
+
+    // Restore the page where the user started before scanning earlier pages.
+    for (let index = 0; index < forward; index += 1) await changePage("previous");
+
+    let backward = 0;
+    while (await changePage("previous")) {
+      backward += 1;
+      await scan();
+    }
+
+    // Restore the original page after scanning from the beginning.
+    for (let index = 0; index < backward; index += 1) await changePage("next");
+
+    if (!rows) {
+      return { ok: false, reason: "No FUT Enhancer price rows were found. Open the gallery price table first." };
+    }
+    return { ok: true, updated, rows, failed, pages };
   }
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {

@@ -325,7 +325,9 @@ syncSellButton.addEventListener("click", async () => {
     }
 
     if (!response?.ok) throw new Error(response?.reason || "FUT Enhancer price fields were not found.");
-    setStatus(`Sell prices updated: ${response.updated} row${response.updated === 1 ? "" : "s"}. Review before submitting.`);
+    const pageText = response.pages > 1 ? ` across ${response.pages} pages` : "";
+    const failedText = response.failed ? ` ${response.failed} row${response.failed === 1 ? "" : "s"} could not be verified.` : "";
+    setStatus(`Sell prices updated: ${response.updated} row${response.updated === 1 ? "" : "s"}${pageText}.${failedText} Review before submitting.`);
   } catch (error) {
     setStatus(error.message || "Could not update sell prices.", true);
   } finally {
