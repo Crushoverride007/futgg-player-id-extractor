@@ -287,11 +287,12 @@
     if (!element || element.children.length > 80) return false;
     const text = normalize(element.textContent);
     if (text.length > 700) return false;
-    // Restrict detection to the compact visual team-card shape. Without this
-    // guard, a page-level container can contain the same labels and swallow
-    // clicks on the real Gallery navigation button.
+    // Only visible, compact team cards qualify. This prevents hidden cards or
+    // route-level containers from swallowing clicks on league/navigation cards.
+    const style = getComputedStyle(element);
+    if (style.display === "none" || style.visibility === "hidden" || style.pointerEvents === "none") return false;
     const rect = element.getBoundingClientRect?.();
-    if (rect && (rect.width < 180 || rect.width > 700 || rect.height < 100 || rect.height > 380)) return false;
+    if (!rect || rect.width < 180 || rect.width > 700 || rect.height < 100 || rect.height > 380) return false;
     const collectedCount = (text.match(/collected/g) || []).length;
     const baseScoreCount = (text.match(/base score/g) || []).length;
     if (collectedCount !== 1 || baseScoreCount !== 1) return false;
@@ -321,24 +322,28 @@
     notice._timer = setTimeout(() => { notice.style.display = "none"; }, error ? 7000 : 3500);
   }
 
+  function visibleGalleryCards() {
+    return [...document.querySelectorAll("a, button, [role='button'], article, section, li, div")]
+      .filter((element) => isGalleryCard(element))
+      .filter((element) => {
+        const parent = element.parentElement;
+        return !parent || ![...parent.children].some((sibling) => sibling !== element && isGalleryCard(sibling) && sibling.contains(element));
+      });
+  }
+
   function isGalleryCardsView() {
-    const title = normalize(document.title);
     const body = normalize(document.body?.textContent).slice(0, 5000);
-    const hasGalleryHeading = body.includes("serie a enilive") || body.includes("gallery set") || body.includes("collected") && body.includes("base score");
     const hasBuyModal = body.includes("buy players") && body.includes("comma separated ids");
-    const hasTeamCards = [...document.querySelectorAll("img, svg")].some((image) => {
-      const alt = normalize(image.getAttribute("alt"));
-      return alt.includes("club") || alt.includes("team") || alt.includes("crest") || alt.includes("logo");
-    });
-    return !hasBuyModal && (title.includes("gallery") || hasGalleryHeading) && hasTeamCards;
+    // League/category screens have no visible team cards. Requiring multiple
+    // rendered cards prevents the handler from affecting route transitions.
+    return !hasBuyModal && visibleGalleryCards().length >= 2;
   }
 
   function findGalleryCardFromTarget(target) {
     if (!isGalleryCardsView()) return null;
-    for (let element = target instanceof Element ? target : null; element && element !== document.body; element = element.parentElement) {
-      if (isGalleryCard(element)) return element;
-    }
-    return null;
+    const cards = visibleGalleryCards();
+    const element = target instanceof Element ? target : null;
+    return cards.find((card) => card === element || card.contains(element)) || null;
   }
 
   function handleGalleryCardClick(event) {
@@ -385,16 +390,11 @@
 
     if (!isGalleryCardsView()) return;
 
-    // Add a pointer cue to currently rendered cards. The delegated handler is
-    // intentionally document-level because React can replace card nodes.
-    const cards = [...document.querySelectorAll("a, button, [role='button'], article, section, li, div")]
-      .filter((element) => isGalleryCard(element));
-    const cardSet = new Set(cards);
-    for (const card of cards) {
-      if ([...card.parentElement ? card.parentElement.children : []].some((sibling) => sibling !== card && cardSet.has(sibling))) {
-        card.style.cursor = "pointer";
-        card.title = `${findGalleryTeamName(card)} — extract players with FUT.GG Player ID Extractor`;
-      }
+    // Add a pointer cue only to currently rendered team cards. The delegated
+    // handler is document-level because React can replace card nodes.
+    for (const card of visibleGalleryCards()) {
+      card.style.cursor = "pointer";
+      card.title = `${findGalleryTeamName(card)} — extract players with FUT.GG Player ID Extractor`;
     }
   }
 
