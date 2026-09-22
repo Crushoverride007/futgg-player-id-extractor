@@ -287,11 +287,18 @@
     if (!element || element.children.length > 80) return false;
     const text = normalize(element.textContent);
     if (text.length > 700) return false;
+    // Restrict detection to the compact visual team-card shape. Without this
+    // guard, a page-level container can contain the same labels and swallow
+    // clicks on the real Gallery navigation button.
+    const rect = element.getBoundingClientRect?.();
+    if (rect && (rect.width < 180 || rect.width > 700 || rect.height < 100 || rect.height > 380)) return false;
+    const collectedCount = (text.match(/collected/g) || []).length;
+    const baseScoreCount = (text.match(/base score/g) || []).length;
+    if (collectedCount !== 1 || baseScoreCount !== 1) return false;
+    if (!element.querySelector("img, svg")) return false;
     // Current FUT Enhancer cards expose the token icon as an image, so the
     // accessible/text content contains the count but not the word "tokens".
-    // Require a real team-name leaf as well as the stable metric labels. This
-    // excludes the nested metrics group that previously captured the click.
-    return text.includes("collected") && text.includes("base score") && Boolean(findGalleryTeamName(element));
+    return Boolean(findGalleryTeamName(element));
   }
 
   function showGalleryNotice(message, error = false) {
@@ -322,6 +329,11 @@
   }
 
   function handleGalleryCardClick(event) {
+    // Never intercept navigation or modal controls. The Gallery route button
+    // lives on the same page as the cards and must keep the app's own handler.
+    const interactive = event.target.closest("button, a, [role='button']");
+    if (interactive && !isGalleryCard(interactive)) return;
+
     const card = findGalleryCardFromTarget(event.target);
     if (!card) return;
 
