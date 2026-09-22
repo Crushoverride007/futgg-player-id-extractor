@@ -208,9 +208,11 @@ function setCurrentState(patch) {
 function restoreState(state) {
   if (!state?.players?.length || !state.idsText) return;
   currentState = { ...currentState, ...state };
-  teamInput.value = state.teamQuery || state.teamName || "";
-  render(state.players, state.galleryInfo, state.teamName || state.teamQuery || "Restored team", false);
-  setStatus(`Restored ${state.players.length} players from ${state.teamName || state.teamQuery}.`);
+  const query = state.teamQuery || state.teamName || "";
+  const displayName = state.teamName || query || "Restored team";
+  teamInput.value = query;
+  render(state.players, state.galleryInfo, displayName, false);
+  setStatus(`Restored ${state.players.length} players from ${displayName}.`);
 }
 
 function render(players, galleryInfoData, teamName, persist = true) {
@@ -226,7 +228,7 @@ function render(players, galleryInfoData, teamName, persist = true) {
   applyButton.disabled = false;
   syncSellButton.disabled = false;
   results.style.display = "block";
-  if (persist) setCurrentState({ teamName, teamQuery: teamName, players, idsText: idsOutput.value, galleryInfo: galleryInfoData, source: "manual" });
+  if (persist) setCurrentState({ teamName, teamQuery: currentState.teamQuery || teamName, players, idsText: idsOutput.value, galleryInfo: galleryInfoData, source: "manual" });
   setStatus(`${players.length} players found for ${teamName}.`);
 }
 
@@ -355,9 +357,9 @@ chrome.storage.local.get("lastState").then(({ lastState }) => restoreState(lastS
 
 chrome.runtime.onMessage.addListener((message) => {
   if (message?.type !== "galleryExtractionComplete") return;
-  teamInput.value = message.teamName || "";
-  render(message.players, null, message.teamName, false);
-  currentState = { ...currentState, teamName: message.teamName, teamQuery: message.teamName, players: message.players, idsText: message.idsText, source: "fut-enhancer-gallery", savedAt: Date.now() };
+  const displayName = message.teamName || "";
+  render(message.players, null, displayName, false);
+  currentState = { ...currentState, teamName: displayName, teamQuery: currentState.teamQuery || displayName, players: message.players, idsText: message.idsText, source: "fut-enhancer-gallery", savedAt: Date.now() };
   setStatus(`Players found: ${message.players.length}. IDs applied to FUT Enhancer.`);
 });
 

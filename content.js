@@ -230,8 +230,28 @@
     return `${imageKey}|${label}|${String(buyField.value || "").trim()}`;
   }
 
+  function cleanGalleryTeamName(value) {
+    const text = String(value || "")
+      .replace(/\s+FUT Gallery Set.*$/i, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!text) return "";
+
+    // Some cards expose the whole accessible label instead of only the club
+    // name, for example `GenoaDCBAS1,152/2,000Grade B is...`.
+    const compact = text.replace(/\s+/g, "");
+    const marker = [
+      compact.search(/dcbas(?=\d|[,/])/i),
+      compact.search(/collected/i),
+      compact.search(/basescore/i),
+      compact.search(/\d[\d,]*\/\d[\d,]*/i),
+      compact.search(/grade/i)
+    ].filter((index) => index > 0).sort((a, b) => a - b)[0];
+    return marker === undefined ? text : compact.slice(0, marker).replace(/[-_]+$/, "").trim();
+  }
+
   function usableTeamName(value) {
-    const text = String(value || "").replace(/\s+FUT Gallery Set.*$/i, "").replace(/\s+/g, " ").trim();
+    const text = cleanGalleryTeamName(value);
     if (text.length < 3 || text.length > 60 || /^\d[\d,./%\s-]*$/.test(text)) return "";
     if (/^(x|close|gallery|buy players|sync collection|collected|base score|grade|tokens?|items|coins needed|total price|score|available|players?|needed|d|c|b|a|s)$/i.test(text)) return "";
     return text;

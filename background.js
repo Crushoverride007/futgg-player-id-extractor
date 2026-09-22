@@ -113,6 +113,7 @@ async function extractTeam(query, slug = "") {
   if (!players.length) throw new Error(`No players were found for ${team.name} on FUT.GG.`);
   return {
     teamName: team.name,
+    teamQuery: query,
     teamUrl: team.url,
     players,
     ids: players.map((player) => player.id),
@@ -125,7 +126,7 @@ async function extractTeam(query, slug = "") {
 async function saveResult(result) {
   await chrome.storage.local.set({
     lastState: { 
-      teamQuery: result.teamName,
+      teamQuery: result.teamQuery || result.teamName,
       teamName: result.teamName,
       players: result.players,
       idsText: result.idsText,
