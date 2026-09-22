@@ -321,7 +321,20 @@
     notice._timer = setTimeout(() => { notice.style.display = "none"; }, error ? 7000 : 3500);
   }
 
+  function isGalleryCardsView() {
+    const title = normalize(document.title);
+    const body = normalize(document.body?.textContent).slice(0, 5000);
+    const hasGalleryHeading = body.includes("serie a enilive") || body.includes("gallery set") || body.includes("collected") && body.includes("base score");
+    const hasBuyModal = body.includes("buy players") && body.includes("comma separated ids");
+    const hasTeamCards = [...document.querySelectorAll("img, svg")].some((image) => {
+      const alt = normalize(image.getAttribute("alt"));
+      return alt.includes("club") || alt.includes("team") || alt.includes("crest") || alt.includes("logo");
+    });
+    return !hasBuyModal && (title.includes("gallery") || hasGalleryHeading) && hasTeamCards;
+  }
+
   function findGalleryCardFromTarget(target) {
+    if (!isGalleryCardsView()) return null;
     for (let element = target instanceof Element ? target : null; element && element !== document.body; element = element.parentElement) {
       if (isGalleryCard(element)) return element;
     }
@@ -369,6 +382,8 @@
       document.documentElement.dataset.futggExtractorDelegated = "true";
       document.addEventListener("click", handleGalleryCardClick, true);
     }
+
+    if (!isGalleryCardsView()) return;
 
     // Add a pointer cue to currently rendered cards. The delegated handler is
     // intentionally document-level because React can replace card nodes.
