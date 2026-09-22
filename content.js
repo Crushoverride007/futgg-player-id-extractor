@@ -78,10 +78,61 @@
     }
   }
 
-  function applyIds(ids) {
-    const field = findGalleryField();
+  function findBuyPlayersButton() {
+    return [...document.querySelectorAll("button, [role='button'], a")]
+      .filter(visible)
+      .find((button) => normalize([
+        button.textContent,
+        button.getAttribute("aria-label"),
+        button.getAttribute("title")
+      ].join(" ")) === "buy players");
+  }
+
+  function waitForGalleryField(timeout = 5000) {
+    const existing = findGalleryField();
+    if (existing) return Promise.resolve(existing);
+
+    return new Promise((resolve) => {
+      const started = Date.now();
+      const observer = new MutationObserver(() => {
+        const field = findGalleryField();
+        if (field) {
+          observer.disconnect();
+          resolve(field);
+        } else if (Date.now() - started >= timeout) {
+          observer.disconnect();
+          resolve(null);
+        }
+      });
+      observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true });
+
+      const poll = () => {
+        const field = findGalleryField();
+        if (field) {
+          observer.disconnect();
+          resolve(field);
+        } else if (Date.now() - started < timeout) {
+          setTimeout(poll, 100);
+        } else {
+          observer.disconnect();
+          resolve(null);
+        }
+      };
+      setTimeout(poll, 100);
+    });
+  }
+
+  async function applyIds(ids, openBuyPlayers = false) {
+    let field = findGalleryField();
+    if (!field && openBuyPlayers) {
+      const button = findBuyPlayersButton();
+      if (button) {
+        button.click();
+        field = await waitForGalleryField();
+      }
+    }
     if (!field) {
-      return { ok: false, reason: "The FUT Enhancer player-ID field was not found. Keep the Buy players modal open and try again." };
+      return { ok: false, reason: "The FUT Enhancer player-ID field was not found. Open Buy players and try again." };
     }
     setReactValue(field, ids);
     return { ok: true };
@@ -217,7 +268,10 @@
     if (!element || element.children.length > 80) return false;
     const text = normalize(element.textContent);
     if (text.length > 700) return false;
-    return text.includes("collected") && text.includes("base score") && text.includes("tokens");
+    // Current FUT Enhancer cards expose the token icon as an image, so the
+    // accessible/text content contains the count but not the word "tokens".
+    // Collected + Base score is the stable card signature.
+    return text.includes("collected") && text.includes("base score");
   }
 
   function installGalleryCardHandlers() {
@@ -238,7 +292,8 @@
       card.dataset.futggExtractorBound = "true";
       card.style.cursor = "pointer";
       card.title = `${teamName} — extract players with FUT.GG Player ID Extractor`;
-      card.addEventListener("click", (event) => {
+            card.addEventListener("click", (event) => {
+
         // The card itself may be a button or link. Only let real form controls
         // inside it keep their native behavior; do not reject clicks on nested
         // spans or on the card's own anchor/button element.
@@ -415,9 +470,8 @@
     return { ok: true, updated, rows, failed, pages };
   }
 
-  function applyGalleryTeamIds(ids) {
-    const result = applyIds(ids);
-    if (!result.ok) return result;
+  async function applyGalleryTeamIds(ids) {
+    const result = await applyIds(ids, true);
     const field = findGalleryField();
     field?.scrollIntoView({ behavior: "smooth", block: "center" });
     return result;
@@ -427,12 +481,12 @@
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message?.type === "applyGalleryTeamIds") {
-      sendResponse(applyGalleryTeamIds(message.ids));
-      return;
+      applyGalleryTeamIds(message.ids).then(sendResponse);
+      return true;
     }
     if (message?.type === "applyFutEnhancerIds") {
-      sendResponse(applyIds(message.ids));
-      return;
+      applyIds(message.ids, false).then(sendResponse);
+      return true;
     }
     if (message?.type === "syncSellPrices") {
       syncSellPrices().then(sendResponse);
