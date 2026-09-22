@@ -230,46 +230,51 @@
     return `${imageKey}|${label}|${String(buyField.value || "").trim()}`;
   }
 
+  function usableTeamName(value) {
+    const text = String(value || "").replace(/\s+FUT Gallery Set.*$/i, "").replace(/\s+/g, " ").trim();
+    if (text.length < 3 || text.length > 60 || /^\d[\d,./%\s-]*$/.test(text)) return "";
+    if (/^(x|close|gallery|buy players|sync collection|collected|base score|grade|tokens?|items|coins needed|total price|score|available|players?|needed|d|c|b|a|s)$/i.test(text)) return "";
+    return text;
+  }
+
   function galleryTeamHint(card) {
     const attributes = [
       "data-team-name", "data-club-name", "data-team", "data-club",
       "data-team-slug", "data-club-slug", "data-slug"
     ];
     for (const name of attributes) {
-      const value = card.getAttribute(name)?.trim();
+      const value = usableTeamName(card.getAttribute(name));
       if (value && !/^\d+$/.test(value)) return value;
     }
 
     const link = card.matches("a[href]") ? card : card.querySelector("a[href]");
     const href = link?.getAttribute("href") || "";
     const match = href.match(/\/fut-gallery\/[^/]+\/([^/?#]+)/i);
-    return match?.[1]?.replace(/-/g, " ") || "";
+    return usableTeamName(match?.[1]?.replace(/-/g, " "));
   }
 
   function findGalleryTeamName(card) {
-    const explicit = galleryTeamHint(card) || card.getAttribute("aria-label");
-    if (explicit) return explicit.replace(/\s+FUT Gallery Set.*$/i, "").trim();
+    const explicit = usableTeamName(galleryTeamHint(card) || card.getAttribute("aria-label"));
+    if (explicit) return explicit;
 
     const heading = card.querySelector("h1, h2, h3, h4, [class*='team-name'], [class*='club-name']");
-    if (heading?.textContent?.trim()) return heading.textContent.replace(/\s+FUT Gallery Set.*$/i, "").trim();
+    const headingName = usableTeamName(heading?.textContent);
+    if (headingName) return headingName;
 
-    // The card name is a direct text node beside the crest. The metric labels
-    // are descendants of a separate group, so inspect only direct text nodes
-    // before using the leaf fallback.
+    // Ignore icon text such as the single-character close button. The actual
+    // club name is normally a longer text node beside the crest.
     const directText = [...card.childNodes]
       .filter((node) => node.nodeType === Node.TEXT_NODE)
-      .map((node) => node.textContent.replace(/\s+/g, " ").trim())
-      .find((text) => text && text.length <= 60 && !/^\d[\d,./%\s-]*$/.test(text));
+      .map((node) => usableTeamName(node.textContent))
+      .find(Boolean);
     if (directText) return directText;
 
     const ignored = /^(gallery|buy players|sync collection|collected|base score|grade|tokens?|items|coins needed|total price|score|available|players?|needed|d|c|b|a|s)$/i;
     const metricText = /(collected|base score|tokens?|coins needed|total price)/i;
     const candidates = [...card.querySelectorAll("span, p, strong, b, div")]
       .filter((element) => element.children.length === 0)
-      .map((element) => element.textContent.replace(/\s+/g, " ").trim())
-      .filter((text, index, values) => text && text.length <= 60 && text.split(" ").length <= 5
-        && !ignored.test(text) && !metricText.test(text)
-        && !/^\d[\d,./%\s-]*$/.test(text)
+      .map((element) => usableTeamName(element.textContent))
+      .filter((text, index, values) => text && !ignored.test(text) && !metricText.test(text)
         && !values.some((other, otherIndex) => otherIndex !== index && other.length < text.length && other && text === other));
 
     return candidates.sort((a, b) => {

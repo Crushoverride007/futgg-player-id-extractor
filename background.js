@@ -75,8 +75,12 @@ async function findTeam(query, slug = "") {
   const requested = normalize(query);
   const requestedSlug = normalize(slug);
   const teams = await getTeamIndex();
-  return teams.find((team) => requestedSlug && normalize(team.slug) === requestedSlug)
-    || teams.find((team) => [team.name, team.slug].some((value) => normalize(value) === requested))
+  if (requestedSlug) {
+    const slugMatch = teams.find((team) => normalize(team.slug) === requestedSlug);
+    if (slugMatch) return slugMatch;
+  }
+  if (!requested) return null;
+  return teams.find((team) => [team.name, team.slug].some((value) => normalize(value) === requested))
     || teams.find((team) => [team.name, team.slug].some((value) => normalize(value).includes(requested)));
 }
 
