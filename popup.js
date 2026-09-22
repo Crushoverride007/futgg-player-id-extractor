@@ -162,10 +162,18 @@ function extractPlayers(html) {
   const seen = new Set();
   for (const anchor of doc.querySelectorAll('a[href*="/players/"]')) {
     const href = anchor.getAttribute("href") || "";
-    const match = href.match(/\/players\/(\d+)-([^/]+)\/\d+-\d+\/?/);
-    if (!match || seen.has(match[1])) continue;
-    seen.add(match[1]);
-    found.push({ id: match[1], name: decodeURIComponent(match[2]).replace(/-/g, " ").replace(/\b\p{L}/gu, (c) => c.toUpperCase()) });
+    const match = href.match(/\/players\/(\d+)-([^/]+)\/(?:\d+-)?(\d+)\/?$/);
+    if (!match) continue;
+
+    // FUT.GG URLs contain two IDs for some current cards. The first one is
+    // FUT.GG's base-player record, while the final ID is the current EA/FC
+    // item ID required by FUT Enhancer. The data attribute is the best source
+    // when available and also covers dynamically rendered gallery entries.
+    const galleryId = anchor.closest("[data-gallery-lineup-player]")?.getAttribute("data-gallery-lineup-player");
+    const id = galleryId || match[3] || match[1];
+    if (seen.has(id)) continue;
+    seen.add(id);
+    found.push({ id, name: decodeURIComponent(match[2]).replace(/-/g, " ").replace(/\b\p{L}/gu, (c) => c.toUpperCase()) });
   }
   return found;
 }

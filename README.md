@@ -10,6 +10,7 @@ A Chromium browser extension that turns a FUT.GG club gallery into a usable list
 
 - Finds a FUT.GG gallery by team name instead of requiring a full URL.
 - Extracts the players shown on the selected team gallery page.
+- Uses the current EA/FC item ID from FUT.GG when a player URL contains both a base-player ID and a current item ID.
 - Displays each player name and ID.
 - Produces a comma-separated ID list for quick copying.
 - Copies the complete ID list directly to the clipboard.
