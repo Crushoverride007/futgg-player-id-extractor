@@ -412,25 +412,16 @@
   }
 
   function installGalleryCardHandlers() {
-    if (!document.documentElement.dataset.futggExtractorDelegated) {
-      document.documentElement.dataset.futggExtractorDelegated = "true";
-      document.addEventListener("click", handleGalleryCardClick, false);
-    }
-
-    if (!isGalleryCardsView()) return;
-
-    // Add a pointer cue only to currently rendered team cards. The delegated
-    // handler is document-level because React can replace card nodes.
-    for (const card of visibleGalleryCards()) {
-      card.style.cursor = "pointer";
-      card.title = `${findGalleryTeamName(card)} — extract players with FUT.GG Player ID Extractor`;
-    }
+    if (document.documentElement.dataset.futggExtractorDelegated === "true") return;
+    document.documentElement.dataset.futggExtractorDelegated = "true";
+    // One lightweight bubbling listener is enough. Do not scan the whole DOM
+    // or observe every React mutation: that can interfere with FC Enhancer's
+    // route rendering and leave a blank league page.
+    document.addEventListener("click", handleGalleryCardClick, false);
   }
 
   function watchGallery() {
     installGalleryCardHandlers();
-    const observer = new MutationObserver(() => installGalleryCardHandlers());
-    observer.observe(document.documentElement, { childList: true, subtree: true });
   }
 
   function pageButton(direction) {
