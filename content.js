@@ -50,21 +50,31 @@
     });
   }
 
-  function setReactValue(field, value) {
+  function setReactValue(field, value, commit = true) {
+    if (!field) return;
+    field.focus();
+
     if (field.isContentEditable) {
-      field.focus();
       document.execCommand("selectAll", false);
       document.execCommand("insertText", false, value);
     } else {
+      field.select?.();
       const prototype = field instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
       const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
       if (setter) setter.call(field, value);
       else field.value = value;
-      field.focus();
+      field.dispatchEvent(new InputEvent("input", {
+        bubbles: true,
+        composed: true,
+        inputType: "insertText",
+        data: String(value)
+      }));
     }
 
-    for (const type of ["input", "change", "keyup"]) {
-      field.dispatchEvent(new Event(type, { bubbles: true, composed: true }));
+    field.dispatchEvent(new Event("keyup", { bubbles: true, composed: true }));
+    if (commit) {
+      field.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+      field.blur();
     }
   }
 
@@ -78,9 +88,13 @@
   }
 
   function priceInput(field) {
-    if (!field || !visible(field) || field.disabled || field.readOnly) return false;
+    if (!field || field.disabled || field.readOnly) return false;
     if (!(field instanceof HTMLInputElement) && !(field instanceof HTMLTextAreaElement)) return false;
     return !["hidden", "checkbox", "radio", "button", "submit", "range"].includes(field.type);
+  }
+
+  function visiblePriceInput(field) {
+    return priceInput(field) && visible(field);
   }
 
   function findPriceTable() {
@@ -106,7 +120,7 @@
     // inputs. Use that relationship first; geometry alone can pair fields from
     // different CSS grid columns when one input is blank or re-rendered.
     const semanticRows = [...table.querySelectorAll("tr, [role='row']")]
-      .map((row) => [...row.querySelectorAll("input, textarea")].filter(priceInput))
+      .map((row) => [...row.querySelectorAll("input, textarea")].filter(visiblePriceInput))
       .filter((fields) => fields.length >= 2)
       .map((fields) => {
         fields.sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left);
@@ -116,7 +130,7 @@
 
     // Fallback for versions using a CSS grid without row semantics.
     const fields = [...table.querySelectorAll("input, textarea")]
-      .filter(priceInput)
+      .filter(visiblePriceInput)
       .map((field) => ({ field, rect: field.getBoundingClientRect() }))
       .sort((a, b) => a.rect.top - b.rect.top || a.rect.left - b.rect.left);
 
@@ -199,26 +213,41 @@
     let rows = 0;
     let failed = 0;
 
+    const applyRowValue = async (signature, value) => {
+      for (let attempt = 0; attempt < 4; attempt += 1) {
+        // Re-query after every write because FUT Enhancer may replace the whole
+        // row when React commits a controlled input update.
+        const current = fieldRows(table).find((candidate) => rowSignature(candidate) === signature);
+        const sellField = current?.[1];
+        if (!sellField) return false;
+        if (String(sellField.value || "").replace(/,/g, "").trim() === value) return true;
+
+        setReactValue(sellField, value, true);
+        await new Promise((resolve) => setTimeout(resolve, 90));
+        const verified = fieldRows(table).find((candidate) => rowSignature(candidate) === signature)?.[1];
+        if (String(verified?.value || "").replace(/,/g, "").trim() === value) return true;
+      }
+      return false;
+    };
+
     const processVisibleRows = async () => {
-      for (const fields of fieldRows(table)) {
+      const candidates = fieldRows(table).map((fields) => ({
+        signature: rowSignature(fields),
+        value: String(fields[0].value || "").replace(/,/g, "").trim()
+      }));
+
+      for (const candidate of candidates) {
         rows += 1;
-        const buyField = fields[0];
-        const sellField = fields[1];
-        const value = String(buyField.value || "").replace(/,/g, "").trim();
-        if (!/^\d+$/.test(value) || Number(value) <= 0) continue;
+        if (!/^\d+$/.test(candidate.value) || Number(candidate.value) <= 0) continue;
+        if (processed.has(candidate.signature)) continue;
 
-        const signature = rowSignature(fields);
-        if (processed.has(signature)) continue;
-        processed.add(signature);
-
-        let applied = false;
-        for (let attempt = 0; attempt < 3 && !applied; attempt += 1) {
-          setReactValue(sellField, value);
-          await new Promise((resolve) => setTimeout(resolve, 35));
-          applied = String(sellField.value || "").replace(/,/g, "").trim() === value;
+        const applied = await applyRowValue(candidate.signature, candidate.value);
+        if (applied) {
+          processed.add(candidate.signature);
+          updated += 1;
+        } else {
+          failed += 1;
         }
-        if (applied) updated += 1;
-        else failed += 1;
       }
     };
 
