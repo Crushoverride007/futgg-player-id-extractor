@@ -253,24 +253,48 @@
     return usableTeamName(match?.[1]?.replace(/-/g, " "));
   }
 
+  function cardNameFromMetrics(card) {
+    const raw = String(card?.textContent || "").replace(/\s+/g, " ").trim();
+    if (!raw) return "";
+
+    // FUT Enhancer can render the club name and grade row without separators,
+    // for example `GenoaDCBAS1,152/2,000Grade...`. Cut at the first metric.
+    const compact = raw.replace(/\s+/g, "");
+    const marker = [
+      compact.search(/dcbas/i),
+      compact.search(/collected/i),
+      compact.search(/basescore/i),
+      compact.search(/\d[\d,]*\/\d[\d,]*/i),
+      compact.search(/grade/i)
+    ].filter((index) => index > 0).sort((a, b) => a - b)[0];
+    if (marker === undefined) return "";
+
+    const prefix = compact.slice(0, marker)
+      .replace(/[^\p{L}\p{N}&' .-]+/gu, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    return usableTeamName(prefix);
+  }
+
   function findGalleryTeamName(card) {
-    const explicit = usableTeamName(galleryTeamHint(card) || card.getAttribute("aria-label"));
-    if (explicit) return explicit;
+    const hinted = usableTeamName(galleryTeamHint(card));
+    if (hinted) return hinted;
+
+    const aria = card.getAttribute("aria-label");
+    const ariaName = aria && !/(collected|base score|grade|tokens?)/i.test(aria)
+      ? usableTeamName(aria) : "";
+    if (ariaName) return ariaName;
 
     const heading = card.querySelector("h1, h2, h3, h4, [class*='team-name'], [class*='club-name']");
     const headingName = usableTeamName(heading?.textContent);
     if (headingName) return headingName;
 
-    // Ignore icon text such as the single-character close button. The actual
-    // club name is normally a longer text node beside the crest.
-    const directText = [...card.childNodes]
-      .filter((node) => node.nodeType === Node.TEXT_NODE)
-      .map((node) => usableTeamName(node.textContent))
-      .find(Boolean);
-    if (directText) return directText;
+    const parsed = cardNameFromMetrics(card);
+    if (parsed) return parsed;
 
+    // Final fallback: inspect leaf text only after the metric-prefix parser.
     const ignored = /^(gallery|buy players|sync collection|collected|base score|grade|tokens?|items|coins needed|total price|score|available|players?|needed|d|c|b|a|s)$/i;
-    const metricText = /(collected|base score|tokens?|coins needed|total price)/i;
+    const metricText = /(collected|base score|tokens?|coins needed|total price|grade)/i;
     const candidates = [...card.querySelectorAll("span, p, strong, b, div")]
       .filter((element) => element.children.length === 0)
       .map((element) => usableTeamName(element.textContent))
@@ -390,7 +414,7 @@
   function installGalleryCardHandlers() {
     if (!document.documentElement.dataset.futggExtractorDelegated) {
       document.documentElement.dataset.futggExtractorDelegated = "true";
-      document.addEventListener("click", handleGalleryCardClick, true);
+      document.addEventListener("click", handleGalleryCardClick, false);
     }
 
     if (!isGalleryCardsView()) return;
