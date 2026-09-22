@@ -28,6 +28,8 @@
     li { margin: 0 0 5px; font-size: 13px; }
     textarea { min-height: 74px; resize: vertical; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
     #results, #choices { display: none; }
+    .gallery-mode { margin: 10px 0 12px; padding: 9px; border: 1px solid #334155; border-radius: 6px; background: #1e293b; color: #cbd5e1; line-height: 1.35; }
+    .gallery-mode strong { color: #f8fafc; }
     .team-summary { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 7px; margin: 12px 0 14px; }
     .summary-card { min-width: 0; border: 1px solid #334155; border-radius: 6px; background: #1e293b; padding: 8px; }
     .summary-label { display: block; color: #94a3b8; font-size: 10px; }
@@ -48,6 +50,7 @@
   <h2>FUT.GG Player ID Extractor</h2>
   <label for="team">Hello, which team would you like to extract the players from?</label>
   <input id="team" type="text" placeholder="Example: Frosinone" autocomplete="off">
+  <div class="gallery-mode"><strong>Gallery mode:</strong> open the FUT Enhancer Gallery and click a team card. The IDs will be fetched and inserted into the Buy players field automatically.</div>
   <button id="extract">Extract Players</button>
   <button id="copy" disabled>Copy IDs to Clipboard</button>
   <button id="apply" class="action" disabled>Apply to FUT Enhancer</button>

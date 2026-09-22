@@ -15,6 +15,9 @@ A Chromium browser extension that turns a FUT.GG club gallery into a usable list
 - Produces a comma-separated ID list for quick copying.
 - Copies the complete ID list directly to the clipboard.
 - Applies the IDs to the open FC Enhancer/FUT Enhancer **Buy players** field.
+- Detects FUT Enhancer Gallery team cards and lets a click start extraction without typing a team name.
+- Fetches the clicked card's FUT.GG team, inserts the IDs into the open **Buy players** field, and saves the result.
+- Restores the last team search and output after the extension popup is closed and reopened.
 - Finds the visible FUT Enhancer price table.
 - Copies each positive **Price** value into the matching **Sell price** field.
 - Shows gallery grades and available summary information when FUT.GG exposes it.
@@ -33,7 +36,7 @@ It uses these sites:
 - `fut.gg` for team galleries and player IDs
 - `ea.com` / the EA SPORTS FC Web App for FC Enhancer/FUT Enhancer integration
 
-The FC Enhancer/FUT Enhancer integration requires the relevant Buy players modal or price table to already be open in the EA FC Web App.
+The FC Enhancer/FUT Enhancer integration requires the relevant Buy players modal or price table to already be open in the EA FC Web App. Gallery-card automation also requires the FUT Enhancer Gallery cards to be visible on that page.
 
 ## Installation
 
@@ -70,6 +73,16 @@ The extension displays a comma-separated list similar to:
 ```text
 239701, 228336, 70163, 74533, 74536
 ```
+
+### Use Gallery mode
+
+1. Open the EA SPORTS FC Web App with the FUT Enhancer Gallery visible.
+2. Leave the **Buy players** field open.
+3. Click a team card in the gallery.
+4. The extension identifies the card, fetches its matching FUT.GG gallery, saves the player list, and inserts the comma-separated IDs into the **Buy players** field.
+5. Open the extension popup to review the saved team, player names, IDs, and gallery output. The popup restores the last result after it is closed and reopened.
+
+The extension does not click **Continue**, submit a purchase, or buy players automatically.
 
 ### Copy the IDs
 
@@ -134,7 +147,8 @@ No login credentials, API keys, or account passwords are collected by this proje
 
 - FUT.GG page structure changes may require selector updates.
 - FC Enhancer/FUT Enhancer must be open on the EA FC Web App for integration features to work.
-- The extension cannot access a closed extension popup; it works with the fields rendered in the web page.
+- The extension cannot render live popup content while the popup is closed; gallery results are persisted in extension storage and restored when it opens again.
+- Gallery cards depend on FUT Enhancer's rendered card text or team/link metadata; site markup changes may require selector updates.
 - The extension only updates visible fields and leaves final actions for the user to review.
 - Team search depends on FUT.GG's publicly available gallery pages.
 
@@ -145,8 +159,9 @@ This is a plain Manifest V3 extension and does not require a build system or pac
 ```text
 manifest.json  Extension metadata and permissions
 popup.html     Popup interface
-popup.js       Team search, extraction, rendering, and actions
-content.js     EA Web App field integration
+popup.js       Team search, extraction, rendering, persistence, and actions
+content.js     EA Web App field, Gallery-card, and price-table integration
+background.js  Gallery-card lookup, FUT.GG extraction, and storage coordination
 ```
 
 Basic syntax checks:

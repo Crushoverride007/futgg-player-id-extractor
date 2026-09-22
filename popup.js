@@ -13,6 +13,8 @@ const gradeList = $("grade-list");
 const galleryInfo = $("gallery-info");
 const teamSummary = $("team-summary");
 
+let currentState = { teamQuery: "", teamName: "", players: [], idsText: "", galleryInfo: null, savedAt: 0, source: "" };
+
 function normalize(value) {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
     .toLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]+/g, " ").trim();
@@ -162,7 +164,7 @@ function extractPlayers(html) {
   const seen = new Set();
   for (const anchor of doc.querySelectorAll('a[href*="/players/"]')) {
     const href = anchor.getAttribute("href") || "";
-    const match = href.match(/\/players\/(\d+)-([^/]+)\/(?:\d+-)?(\d+)\/?$/);
+    const match = href.match(/\/players\/(\d+)-([^/]+)(?:\/(?:\d+-)?(\d+))?\/?$/);
     if (!match) continue;
 
     // FUT.GG URLs contain two IDs for some current cards. The first one is
@@ -198,8 +200,21 @@ function clear() {
   syncSellButton.disabled = true;
 }
 
-function render(players, galleryInfoData, teamName) {
-  renderGalleryInfo(galleryInfoData, players, teamName);
+function setCurrentState(patch) {
+  currentState = { ...currentState, ...patch, savedAt: Date.now() };
+  chrome.storage.local.set({ lastState: currentState }).catch(() => {});
+}
+
+function restoreState(state) {
+  if (!state?.players?.length || !state.idsText) return;
+  currentState = { ...currentState, ...state };
+  teamInput.value = state.teamQuery || state.teamName || "";
+  render(state.players, state.galleryInfo, state.teamName || state.teamQuery || "Restored team", false);
+  setStatus(`Restored ${state.players.length} players from ${state.teamName || state.teamQuery}.`);
+}
+
+function render(players, galleryInfoData, teamName, persist = true) {
+  renderGalleryInfo(galleryInfoData || { grades: [], selectedGrade: "—", metrics: {} }, players, teamName);
   playersOutput.replaceChildren();
   for (const player of players) {
     const item = document.createElement("li");
@@ -211,6 +226,7 @@ function render(players, galleryInfoData, teamName) {
   applyButton.disabled = false;
   syncSellButton.disabled = false;
   results.style.display = "block";
+  if (persist) setCurrentState({ teamName, teamQuery: teamName, players, idsText: idsOutput.value, galleryInfo: galleryInfoData, source: "manual" });
   setStatus(`${players.length} players found for ${teamName}.`);
 }
 
@@ -333,6 +349,21 @@ syncSellButton.addEventListener("click", async () => {
   } finally {
     syncSellButton.disabled = false;
   }
+});
+
+chrome.storage.local.get("lastState").then(({ lastState }) => restoreState(lastState)).catch(() => {});
+
+chrome.runtime.onMessage.addListener((message) => {
+  if (message?.type !== "galleryExtractionComplete") return;
+  teamInput.value = message.teamName || "";
+  render(message.players, null, message.teamName, false);
+  currentState = { ...currentState, teamName: message.teamName, teamQuery: message.teamName, players: message.players, idsText: message.idsText, source: "fut-enhancer-gallery", savedAt: Date.now() };
+  setStatus(`Players found: ${message.players.length}. IDs applied to FUT Enhancer.`);
+});
+
+teamInput.addEventListener("input", () => {
+  currentState = { ...currentState, teamQuery: teamInput.value };
+  chrome.storage.local.set({ lastState: currentState }).catch(() => {});
 });
 
 teamInput.addEventListener("keydown", (event) => {

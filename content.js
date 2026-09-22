@@ -179,6 +179,95 @@
     return `${imageKey}|${label}|${String(buyField.value || "").trim()}`;
   }
 
+  function galleryTeamHint(card) {
+    const attributes = [
+      "data-team-name", "data-club-name", "data-team", "data-club",
+      "data-team-slug", "data-club-slug", "data-slug"
+    ];
+    for (const name of attributes) {
+      const value = card.getAttribute(name)?.trim();
+      if (value && !/^\d+$/.test(value)) return value;
+    }
+
+    const link = card.matches("a[href]") ? card : card.querySelector("a[href]");
+    const href = link?.getAttribute("href") || "";
+    const match = href.match(/\/fut-gallery\/[^/]+\/([^/?#]+)/i);
+    return match?.[1]?.replace(/-/g, " ") || "";
+  }
+
+  function findGalleryTeamName(card) {
+    const explicit = galleryTeamHint(card) || card.getAttribute("aria-label");
+    if (explicit) return explicit.replace(/\s+FUT Gallery Set.*$/i, "").trim();
+    const heading = card.querySelector("h1, h2, h3, h4, [class*='team-name'], [class*='club-name'], [class*='title']");
+    if (heading?.textContent?.trim()) return heading.textContent.replace(/\s+FUT Gallery Set.*$/i, "").trim();
+
+    const ignored = /^(gallery|buy players|sync collection|collected|base score|grade|tokens|items|coins needed|total price|score|available|players?|needed|d|c|b|a|s)$/i;
+    const candidates = [...card.querySelectorAll("span, p, strong, b, div")]
+      .map((element) => element.textContent.replace(/\s+/g, " ").trim())
+      .filter((text, index, values) => text && text.length <= 60 && !ignored.test(text)
+        && !/^\d[\d,./\s-]*$/.test(text)
+        && !values.some((other, otherIndex) => otherIndex !== index && other.length < text.length && other && text === other));
+    return candidates.sort((a, b) => {
+      const score = (value) => (value.split(" ").length > 1 ? 0 : 1) * 100 + value.length;
+      return score(a) - score(b);
+    })[0] || "";
+  }
+
+  function isGalleryCard(element) {
+    if (!element || element.children.length > 80) return false;
+    const text = normalize(element.textContent);
+    if (text.length > 700) return false;
+    return text.includes("collected") && text.includes("base score") && text.includes("tokens");
+  }
+
+  function installGalleryCardHandlers() {
+    const cards = [...document.querySelectorAll("a, button, [role='button'], article, section, li, div")]
+      .filter((element) => isGalleryCard(element));
+    const cardSet = new Set(cards);
+    const compact = cards.filter((card) => {
+      for (let parent = card.parentElement; parent; parent = parent.parentElement) {
+        if (cardSet.has(parent)) return false;
+      }
+      return true;
+    });
+
+    for (const card of compact) {
+      if (card.dataset.futggExtractorBound === "true") continue;
+      const teamName = findGalleryTeamName(card);
+      if (!teamName) continue;
+      card.dataset.futggExtractorBound = "true";
+      card.style.cursor = "pointer";
+      card.title = `${teamName} — extract players with FUT.GG Player ID Extractor`;
+      card.addEventListener("click", (event) => {
+        // The card itself may be a button or link. Only let real form controls
+        // inside it keep their native behavior; do not reject clicks on nested
+        // spans or on the card's own anchor/button element.
+        const control = event.target.closest("input, select, textarea, [contenteditable='true']");
+        if (control && control !== card) return;
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        card.classList.add("futgg-extractor-loading");
+        chrome.runtime.sendMessage({
+          type: "galleryTeamClicked",
+          teamName,
+          teamSlug: galleryTeamHint(card)
+        }, (response) => {
+          card.classList.remove("futgg-extractor-loading");
+          if (chrome.runtime.lastError || !response?.ok) {
+            console.warn("FUT.GG Player ID Extractor:", chrome.runtime.lastError?.message || response?.reason || "Could not extract this team.");
+          }
+        });
+      }, true);
+    }
+  }
+
+  function watchGallery() {
+    installGalleryCardHandlers();
+    const observer = new MutationObserver(() => installGalleryCardHandlers());
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+  }
+
   function pageButton(direction) {
     const wanted = direction === "next" ? "next page" : "previous page";
     return [...document.querySelectorAll("button, [role='button']")]
@@ -326,7 +415,21 @@
     return { ok: true, updated, rows, failed, pages };
   }
 
+  function applyGalleryTeamIds(ids) {
+    const result = applyIds(ids);
+    if (!result.ok) return result;
+    const field = findGalleryField();
+    field?.scrollIntoView({ behavior: "smooth", block: "center" });
+    return result;
+  }
+
+  watchGallery();
+
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message?.type === "applyGalleryTeamIds") {
+      sendResponse(applyGalleryTeamIds(message.ids));
+      return;
+    }
     if (message?.type === "applyFutEnhancerIds") {
       sendResponse(applyIds(message.ids));
       return;

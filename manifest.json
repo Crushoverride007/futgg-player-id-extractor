@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "FUT.GG Player ID Extractor",
-  "version": "1.2.5",
+  "version": "1.2.6",
   "description": "khdam 3la wladk awled l9af — Created by Crushoverride007.",
-  "permissions": ["clipboardWrite", "tabs", "scripting"],
+  "permissions": ["clipboardWrite", "tabs", "scripting", "storage"],
   "host_permissions": [
     "https://www.fut.gg/*",
     "https://ea.com/*",
@@ -25,5 +25,8 @@
       "js": ["content.js"],
       "run_at": "document_idle"
     }
-  ]
+  ],
+  "background": {
+    "service_worker": "background.js"
+  }
 }
