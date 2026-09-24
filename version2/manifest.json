@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "FUT.GG Player ID Extractor",
+  "version": "2.0.3",
+  "description": "khdam 3la wladk awled l9af — Created by Crushoverride007.",
+  "permissions": ["clipboardWrite", "tabs", "scripting", "storage"],
+  "host_permissions": [
+    "https://www.fut.gg/*",
+    "https://ea.com/*",
+    "https://www.ea.com/*",
+    "https://*.ea.com/*",
+    "https://*.easports.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://ea.com/*",
+        "https://www.ea.com/*",
+        "https://*.ea.com/*",
+        "https://*.easports.com/*"
+      ],
+      "js": ["content.js", "gallery-auto-select.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  }
+}

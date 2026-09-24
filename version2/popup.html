@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FUT.GG Player IDs</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body { width: 430px; margin: 0; padding: 16px; background: #111827; color: #f8fafc; font: 14px Arial, sans-serif; }
+    .popup-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+    h2 { margin: 0; font-size: 18px; }
+    .version-badge { flex-shrink: 0; padding: 4px 7px; border: 1px solid #475569; border-radius: 6px; background: #1e293b; color: #93c5fd; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    label { display: block; margin-bottom: 7px; color: #cbd5e1; }
+    input, textarea { width: 100%; border: 1px solid #475569; border-radius: 6px; background: #1e293b; color: #f8fafc; padding: 10px; font: inherit; }
+    input:focus, textarea:focus { outline: 2px solid #3b82f6; outline-offset: 1px; }
+    button { width: 100%; margin-top: 10px; padding: 10px; border: 0; border-radius: 6px; background: #2563eb; color: white; font-weight: 700; cursor: pointer; }
+    button:hover { background: #1d4ed8; }
+    button:disabled { background: #475569; color: #94a3b8; cursor: not-allowed; }
+    button.secondary { background: #334155; text-align: left; }
+    button.secondary:hover { background: #475569; }
+    button.action { background: #059669; }
+    button.action:hover { background: #047857; }
+    #status { min-height: 18px; margin: 12px 0; color: #93c5fd; line-height: 1.35; white-space: normal; overflow-wrap: anywhere; }
+    #status.error { color: #fca5a5; }
+    h3 { margin: 14px 0 7px; font-size: 14px; }
+    ol { max-height: 240px; overflow-y: auto; margin: 0; padding-left: 26px; }
+    li { margin: 0 0 5px; font-size: 13px; }
+    textarea { min-height: 74px; resize: vertical; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    #results, #choices { display: none; }
+    .gallery-mode { margin: 10px 0 12px; padding: 9px; border: 1px solid #334155; border-radius: 6px; background: #1e293b; color: #cbd5e1; line-height: 1.35; }
+    .gallery-mode strong { color: #f8fafc; }
+    .auto-select-toggle { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; font-weight: 700; color: #f8fafc; }
+    .auto-select-toggle input { width: auto; margin: 0; accent-color: #059669; }
+    #gallery-auto-select-status { display: block; margin-top: 5px; color: #93c5fd; }
+    .team-summary { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 7px; margin: 12px 0 14px; }
+    .summary-card { min-width: 0; border: 1px solid #334155; border-radius: 6px; background: #1e293b; padding: 8px; }
+    .summary-label { display: block; color: #94a3b8; font-size: 10px; }
+    .summary-value { display: block; margin-top: 3px; overflow-wrap: anywhere; font-size: 13px; font-weight: 700; }
+    .gallery-info { display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; margin: 12px 0 14px; }
+    .metric, .grade-card { border: 1px solid #334155; border-radius: 6px; background: #1e293b; padding: 8px; }
+    .metric-label, .grade-label { display: block; color: #94a3b8; font-size: 11px; }
+    .metric-value { display: block; margin-top: 3px; font-size: 14px; font-weight: 700; }
+    .grade-heading { margin: 14px 0 7px; font-size: 14px; }
+    .grade-list { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; }
+    .grade-card { padding: 6px; text-align: center; }
+    .grade-card.selected { border-color: #f97316; box-shadow: inset 0 -2px #f97316; }
+    .grade-value { display: block; margin-top: 3px; font-size: 12px; font-weight: 700; }
+    .creator { margin: 16px 0 0; color: #94a3b8; font-size: 11px; text-align: center; }
+  </style>
+</head>
+<body>
+  <header class="popup-header">
+    <h2>FUT.GG Player ID Extractor</h2>
+    <span id="extension-version" class="version-badge" title="Installed extension version">v…</span>
+  </header>
+  <label for="team">Hello, which team would you like to extract the players from?</label>
+  <input id="team" type="text" placeholder="Example: Frosinone" autocomplete="off">
+  <div class="gallery-mode"><strong>Gallery mode:</strong> open the FUT Enhancer Gallery and click a team card. The IDs will be fetched and inserted into the Buy players field automatically.</div>
+  <button id="extract">Extract Players</button>
+  <button id="copy" disabled>Copy IDs to Clipboard</button>
+  <button id="apply" class="action" disabled>Apply to FUT Enhancer</button>
+  <div class="gallery-mode"><strong>Auto sell sync:</strong> when FUT Enhancer renders or changes the Buy/Sell price table, sell prices are synchronized automatically, including virtualized and multi-page tables.</div>
+  <div class="gallery-mode">
+    <label class="auto-select-toggle"><input id="gallery-auto-select" type="checkbox" disabled> Auto-select first 15 Gallery players</label>
+    Automatically click <strong>+ Buy</strong> on numbered cards 1–15. Already-added players count; cards 16+ are untouched. This does not start purchasing.
+    <small id="gallery-auto-select-status" role="status"></small>
+  </div>
+  <div id="status"></div>
+  <div id="choices"></div>
+  <section id="results">
+    <div id="team-summary" class="team-summary"></div>
+    <h3>Gallery Information</h3>
+    <div id="grade-list" class="grade-list"></div>
+    <div id="gallery-info" class="gallery-info"></div>
+    <h3>Players and IDs</h3>
+    <ol id="players"></ol>
+    <h3>IDs only</h3>
+    <textarea id="ids" readonly></textarea>
+  </section>
+  <p class="creator">Created by Crushoverride007 · khdam 3la wladk awled l9af</p>
+  <script src="popup.js"></script>
+  <script src="gallery-settings.js"></script>
+</body>
+</html>
